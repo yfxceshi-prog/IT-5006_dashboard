@@ -1,0 +1,17 @@
+data_cleam*/
+data_set*/
+*.csv
+*.ipynb
+.idea/
+.vscode/
+__pycache__/
+Pipfile.txt
+PlainText.txt
+space analysis_cwd/
+eda_ylf/
+data_cleam*/
+data_set*/
+*.csv
+.idea/
+.vscode/
+__pycache__/
