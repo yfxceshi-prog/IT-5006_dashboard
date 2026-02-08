@@ -6,6 +6,13 @@ import pydeck as pdk
 import io
 import gzip
 
+def normalize_raw_url(url: str) -> str:
+    u = str(url).strip()
+    if "github.com" in u and "/blob/" in u:
+        u = u.replace("https://github.com/", "https://raw.githubusercontent.com/")
+        u = u.replace("/blob/", "/")
+    return u
+
 st.set_page_config(page_title="Chicago Crime Interactive Dashboard", page_icon="📊", layout="wide")
 st.markdown("""
     <style>
@@ -116,15 +123,31 @@ with st.sidebar:
 if file_obj is not None:
     df = load_csv(file_obj, is_fileobj=True)
 elif url_text:
-    df = load_csv(url_text, is_fileobj=False)
+    raw_url = normalize_raw_url(url_text)
+    try:
+        df = load_csv(raw_url, is_fileobj=False)
+    except Exception:
+        st.error("Failed to load CSV from URL. Please paste a direct Raw CSV link (e.g., raw.githubusercontent.com or add ?raw=1).")
+        st.stop()
 else:
     st.info("Provide a CSV via upload or URL to start.")
     st.stop()
 
-min_date = df["__date__"].min().date()
-max_date = df["__date__"].max().date()
-min_year = int(df["Year"].min()) if "Year" in df.columns else min_date.year
-max_year = int(df["Year"].max()) if "Year" in df.columns else max_date.year
+if df.empty or df["__date__"].isna().all():
+    st.error("CSV appears invalid or has no parsable date column. Ensure you upload the cleaned CSV and use a Raw URL.")
+    st.stop()
+
+min_date_series = df["__date__"].dropna()
+min_date = min_date_series.min().date() if not min_date_series.empty else pd.to_datetime("2015-01-01").date()
+max_date = min_date_series.max().date() if not min_date_series.empty else pd.to_datetime("2024-12-31").date()
+if "Year" in df.columns:
+    year_series = pd.to_numeric(df["Year"], errors="coerce").dropna()
+    if year_series.empty:
+        min_year, max_year = min_date.year, max_date.year
+    else:
+        min_year, max_year = int(year_series.min()), int(year_series.max())
+else:
+    min_year, max_year = min_date.year, max_date.year
 types = sorted(list(df["Primary Type"].cat.categories)) if "Primary Type" in df.columns else []
 locs = sorted(list(df["Location Description"].cat.categories)) if "Location Description" in df.columns else []
 districts = sorted(list(df["District"].cat.categories)) if "District" in df.columns else []
@@ -170,7 +193,7 @@ with tab1:
     ts = df_sel.groupby("MonthStart").size().reset_index(name="Count")
     fig_ts = px.line(ts, x="MonthStart", y="Count", height=420, markers=True, template="plotly_white")
     fig_ts.update_traces(line=dict(color="#2F64FF", width=2))
-    left.plotly_chart(fig_ts, use_container_width=True)
+    left.plotly_chart(fig_ts, width="stretch")
     if "Primary Type" in df_sel.columns:
         sel_types_line = st.session_state.get("types_sel", [])
         if len(sel_types_line) == 0:
@@ -179,14 +202,14 @@ with tab1:
         ts_types = ts_types[ts_types["Primary Type"].isin(sel_types_line)]
         fig_ts_type = px.line(ts_types, x="MonthStart", y="Count", color="Primary Type", height=420, template="plotly_white")
         fig_ts_type.update_layout(legend_title_text="Crime Type")
-        left.plotly_chart(fig_ts_type, use_container_width=True)
+        left.plotly_chart(fig_ts_type, width="stretch")
     if "DayOfWeek" in df_sel.columns and "Hour" in df_sel.columns:
         order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
         heat = df_sel.groupby(["DayOfWeek","Hour"], observed=True).size().reset_index(name="Count")
         pivot = heat.pivot(index="DayOfWeek", columns="Hour", values="Count").reindex(order)
         fig_heat = px.imshow(pivot, aspect="auto", height=420, color_continuous_scale="Viridis")
         fig_heat.update_layout(template="plotly_white", xaxis_title="Hour", yaxis_title="DayOfWeek")
-        right.plotly_chart(fig_heat, use_container_width=True)
+        right.plotly_chart(fig_heat, width="stretch")
 
 with tab2:
     map_mode = st.radio("Map Mode", ["Density Hexagon","Scatter"], horizontal=True)
@@ -218,7 +241,7 @@ with tab3:
         if len(top) > 0:
             fig_bar = px.bar(top.head(15), x="Count", y="Primary Type", orientation="h", height=500, template="plotly_white", color="Count", color_continuous_scale="Blues")
             fig_bar.update_layout(yaxis_categoryorder="total ascending")
-            cols[0].plotly_chart(fig_bar, use_container_width=True)
+            cols[0].plotly_chart(fig_bar, width="stretch")
         else:
             cols[0].info("No type data in filtered result")
     if "Location Description" in df_sel.columns:
@@ -227,7 +250,7 @@ with tab3:
         if len(loc_top) > 0:
             fig_loc = px.bar(loc_top.head(15), x="Count", y="Location Description", orientation="h", height=500, template="plotly_white", color="Count", color_continuous_scale="Purples")
             fig_loc.update_layout(yaxis_categoryorder="total ascending")
-            cols[1].plotly_chart(fig_loc, use_container_width=True)
+            cols[1].plotly_chart(fig_loc, width="stretch")
         else:
             cols[1].info("No location data in filtered result")
 
