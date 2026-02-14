@@ -27,11 +27,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_data(show_spinner=True)
-def load_csv(src, is_fileobj=False):
+def load_csv(src, is_fileobj=False, nrows=None):
+    required_kws = [
+        "date","occur","incident","crime","primary","offense","category",
+        "location","arrest","domestic","latitude","lat","longitude","lon","long",
+        "district","ward","community","description"
+    ]
+    read_params = dict(low_memory=False, on_bad_lines="skip", nrows=nrows,
+                       usecols=lambda c: any(k in str(c).lower() for k in required_kws))
     if is_fileobj:
-        df = pd.read_csv(src, low_memory=False, on_bad_lines="skip")
+        df = pd.read_csv(src, **read_params)
     else:
-        df = pd.read_csv(src, low_memory=False, on_bad_lines="skip")
+        df = pd.read_csv(src, **read_params)
     def pick(kws):
         for c in df.columns:
             s = c.lower().strip()
@@ -116,16 +123,18 @@ with st.sidebar:
         file_obj = st.file_uploader("Upload CSV file", type=["csv"])
     else:
         url_text = st.text_input("CSV URL (GitHub Raw or other)")
+    load_mode = st.selectbox("Load Mode", ["Preview (20k rows)","Sample (100k rows)","Full dataset"], index=0)
     st.subheader("Filters")
     st.write("Set filters, then click the button below to apply")
     apply_btn = st.button("Apply Filters", type="primary")
 
+nrows = 20000 if "Preview" in load_mode else (100000 if "Sample" in load_mode else None)
 if file_obj is not None:
-    df = load_csv(file_obj, is_fileobj=True)
+    df = load_csv(file_obj, is_fileobj=True, nrows=nrows)
 elif url_text:
     raw_url = normalize_raw_url(url_text)
     try:
-        df = load_csv(raw_url, is_fileobj=False)
+        df = load_csv(raw_url, is_fileobj=False, nrows=nrows)
     except Exception:
         st.error("Failed to load CSV from URL. Please paste a direct Raw CSV link (e.g., raw.githubusercontent.com or add ?raw=1).")
         st.stop()
