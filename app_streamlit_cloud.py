@@ -123,12 +123,12 @@ with st.sidebar:
         file_obj = st.file_uploader("Upload CSV file", type=["csv"])
     else:
         url_text = st.text_input("CSV URL (GitHub Raw or other)")
-    load_mode = st.selectbox("Load Mode", ["Preview (20k rows)","Sample (100k rows)","Full dataset"], index=0)
+    load_mode = st.selectbox("Load Mode", ["Preview (20k rows)","Balanced by year (120k)","Sample (100k rows)","Full dataset"], index=0)
     st.subheader("Filters")
     st.write("Set filters, then click the button below to apply")
     apply_btn = st.button("Apply Filters", type="primary")
 
-nrows = 20000 if "Preview" in load_mode else (100000 if "Sample" in load_mode else None)
+nrows = 20000 if "Preview" in load_mode else (200000 if "Balanced by year" in load_mode else (100000 if "Sample" in load_mode else None))
 if file_obj is not None:
     df = load_csv(file_obj, is_fileobj=True, nrows=nrows)
 elif url_text:
@@ -145,6 +145,22 @@ else:
 if df.empty or df["__date__"].isna().all():
     st.error("CSV appears invalid or has no parsable date column. Ensure you upload the cleaned CSV and use a Raw URL.")
     st.stop()
+
+# Balanced sampling across years (post-load)
+if "Balanced by year" in load_mode and "Year" in df.columns:
+    ys = pd.to_numeric(df["Year"], errors="coerce").dropna()
+    if not ys.empty and ys.nunique() > 1:
+        target = 120000
+        per_year = max(1, target // int(ys.nunique()))
+        parts = []
+        for y, grp in df.groupby("Year", observed=True):
+            try:
+                k = min(len(grp), per_year)
+                parts.append(grp.sample(k, random_state=42))
+            except Exception:
+                parts.append(grp.head(per_year))
+        df = pd.concat(parts, ignore_index=True)
+        st.caption(f"Balanced sample across years: {len(df):,} rows (~{per_year:,}/year)")
 
 min_date_series = df["__date__"].dropna()
 min_date = min_date_series.min().date() if not min_date_series.empty else pd.to_datetime("2015-01-01").date()
@@ -165,8 +181,8 @@ areas = sorted(list(df["Community Area"].cat.categories)) if "Community Area" in
 with st.sidebar:
     date_range = st.date_input("Date Range", value=(min_date, max_date), min_value=min_date, max_value=max_date)
     if min_year >= max_year:
-        year_single = st.slider("Year", min_year, max_year, min_year)
-        year_range = (int(year_single), int(year_single))
+        st.info(f"Only one year available: {min_year}")
+        year_range = (int(min_year), int(max_year))
     else:
         year_range = st.slider("Year Range", min_year, max_year, (min_year, max_year))
     hour_range = st.slider("Hour Range", 0, 23, (0,23))
