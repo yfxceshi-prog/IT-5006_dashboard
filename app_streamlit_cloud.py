@@ -164,7 +164,11 @@ areas = sorted(list(df["Community Area"].cat.categories)) if "Community Area" in
 
 with st.sidebar:
     date_range = st.date_input("Date Range", value=(min_date, max_date), min_value=min_date, max_value=max_date)
-    year_range = st.slider("Year Range", min_year, max_year, (min_year, max_year))
+    if min_year >= max_year:
+        year_single = st.slider("Year", min_year, max_year, min_year)
+        year_range = (int(year_single), int(year_single))
+    else:
+        year_range = st.slider("Year Range", min_year, max_year, (min_year, max_year))
     hour_range = st.slider("Hour Range", 0, 23, (0,23))
     if "types_sel" not in st.session_state:
         st.session_state["types_sel"] = types[:5] if types else []
